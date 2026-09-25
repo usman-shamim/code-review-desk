@@ -1,0 +1,41 @@
+[project]
+name = "code-review-desk"
+version = "0.1.0"
+description = "Spec-first code review desk: three concurrent reviewers, one merged typed report, an output guardrail that refuses credential-shaped reports."
+readme = "specs/001-code-review-desk/spec.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai-agents>=0.2.9",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "chainlit>=1.0",
+]
+
+[project.scripts]
+desk-review = "desk.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/desk"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

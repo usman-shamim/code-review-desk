@@ -297,8 +297,11 @@ reviewer spans overlap in time and the slowest can be named.
 - **NFR-1 — Secrets.** The OpenAI API key MUST be supplied as `OPENAI_API_KEY`, read from a `.env`
   file at the repository root that is gitignored, and loaded at startup by a dotenv loader before
   anything else runs — never from a hard-coded value, and never by indexing the environment
-  directly, which raises a traceback precisely when the key is absent. A missing key MUST fail at
-  startup with one sentence on stderr and a non-zero exit status, never a traceback. No secret —
+  directly, which raises a traceback precisely when the key is absent. A missing key MUST stop
+  any run that would call a model, before that call, with one sentence on stderr and a non-zero
+  exit status — never a traceback. Paths that make no model call (splitting a diff, printing the
+  resolved prompt, printing the generated schema) MUST run without a key, so the offline
+  behaviour of FR-1 to FR-4 stays demonstrable. No secret —
   and nothing shaped like one — may ever be written to the ledger, the report, the trace, or the
   interface. A committed `.env.example` MUST name `OPENAI_API_KEY` without carrying a value.
 - **NFR-2 — Cost.** Every agent MUST declare its own model settings. There MUST be no unbounded

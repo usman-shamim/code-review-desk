@@ -1,0 +1,4 @@
+This was meant to be a unified diff but it is prose.
+
+There is no file header, no hunk header, and no +/- markers.
+The Desk must report this as a message rather than raising a traceback.

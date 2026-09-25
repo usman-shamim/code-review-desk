@@ -1,0 +1,18 @@
+--- a/src/loader.py
++++ b/src/loader.py
+@@ -1,12 +1,14 @@
+ import json
+ 
+ 
+ def load(path):
+-    with open(path) as handle:
++    try:
++        with open(path) as handle:
++            return json.load(handle)
++    except Exception:
++        pass
++
++
++def load_all(paths):
++    """Load every path, skipping the ones that raise."""
++    return [load(p) for p in paths]

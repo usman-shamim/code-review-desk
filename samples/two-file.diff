@@ -1,0 +1,19 @@
+--- a/src/auth.py
++++ b/src/auth.py
+@@ -1,7 +1,9 @@
+ import hashlib
++import os
+ 
+-def check(password):
+-    return hashlib.sha256(password.encode()).hexdigest()
++
++def check(password: str) -> bool:
++    expected = os.environ.get("REVIEW_DESK_PASSWORD_HASH", "")
++    return hashlib.sha256(password.encode()).hexdigest() == expected
+--- a/src/util.py
++++ b/src/util.py
+@@ -1,4 +1,5 @@
+ def slugify(text):
+-    return text.lower()
++    """Lowercase, trim, and hyphenate a label."""
++    return text.strip().lower().replace(" ", "-")

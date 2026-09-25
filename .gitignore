@@ -7,3 +7,13 @@ code-review-desk-project-guide.pdf
 
 # Secrets — never commit (NFR-1)
 .env
+
+# Runtime artefacts — never committed
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Run history is an operational log, not an artefact (FR-11)
+ledger.jsonl

@@ -46,7 +46,7 @@ functional requirements across three phases.
 |---|-----------|--------------------|--------|
 | I | Specification Before Implementation | The four Phase 0 artifacts are committed before `src/desk/` is created; the Phase 0 commit contains no source file | **PASS** — this plan is committed before any implementation task starts |
 | II | Model Configured On The Agent | Every agent sets `model=` and `model_settings=` explicitly; `RunConfig(model=...)` appears only on the FR-7 override path | **PASS** — `agents.py` declares `gpt-5-nano` on the base reviewer; no agent inherits a default |
-| III | Secrets Stay In `.env` | `config.require_env("OPENAI_API_KEY")` is the first statement of the entry point; the guardrail scans every outbound report; the ledger writer never receives diff or finding text | **PASS** — see `config.py` and `guardrails.py` below |
+| III | Secrets Stay In `.env` | `config.require_env("OPENAI_API_KEY")` runs before any model call and before any client is constructed; the guardrail scans every outbound report; the ledger writer never receives diff or finding text | **PASS** — see `config.py` and `guardrails.py` below |
 | IV | Tools Return Sentences, Never Raise | Every diff-reading tool sets `failure_error_function`; the ruleset tool is forced via `tool_choice`; `max_turns` is set and `MaxTurnsExceeded` is caught | **PASS** — see the tool contracts table |
 | V | A Review Is Reproducible From The Diff | `ReviewContext` travels in the run context and is read through `RunContextWrapper`; instructions are callables resolved per run; no repository string appears in prompt text | **PASS** — FR-2's schema-exclusion mechanism and FR-4's callable instructions |
 | VI | Concurrency And Guardrails Are Load-Bearing | `asyncio.gather` over cloned reviewers; `@output_guardrail` on the report path with the tripwire caught | **PASS** — neither has a fallback path in this plan |
@@ -184,7 +184,7 @@ src/desk/
 ├── hooks.py          # RunHooks (all reviewers) + AgentHooks (exactly one) (FR-10)
 ├── ledger.py         # trace processor appending one line per run (FR-11)
 ├── pipeline.py       # gather the clones, merge, hand off, assemble the report (FR-5, FR-6)
-└── cli.py            # async entry point: require_env first, then run (FR-1, NFR-1)
+└── cli.py            # async entry: require_env before any model call, then run (FR-1, NFR-1)
 
 app.py                # Chainlit page: paste a diff, stream findings, hold session state (FR-12)
 rulesets/             # ruleset files a reviewer must consult (FR-9)

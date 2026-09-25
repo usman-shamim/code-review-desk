@@ -1,0 +1,15 @@
+--- a/src/client.py
++++ b/src/client.py
+@@ -1,8 +1,12 @@
+ import httpx
+ 
++# TODO: move this into .env before we ship
++OPENAI_API_KEY = "sk-proj-NOTAREALKEY0000000000000000000000000000000000"
++
+ 
+ def make_client():
+-    return httpx.Client(timeout=30)
++    return httpx.Client(
++        timeout=30,
++        headers={"Authorization": "Bearer " + OPENAI_API_KEY},
++    )
