@@ -21,11 +21,9 @@ SAMPLES = REPO / "samples"
 def cli(*args: str, with_key: bool = False) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     if not with_key:
-        env.pop("OPENAI_API_KEY", None)
-        # Point the loader away from the repository .env, so the key really is absent. Without
-        # this the loader reads .env and re-supplies it, and NFR-1's failure mode stops being
-        # observable the moment a real key exists.
-        env["DESK_ENV_FILE"] = str(Path(tempfile.gettempdir()) / "desk-absent.env")
+        # An empty value counts as present to load_dotenv (override=False), so .env cannot
+        # re-supply the key, while require_env's truthiness check still treats it as missing.
+        env["OPENAI_API_KEY"] = ""
     return subprocess.run(
         [sys.executable, "-m", "desk.cli", *args],
         capture_output=True,

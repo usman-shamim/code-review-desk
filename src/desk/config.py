@@ -14,13 +14,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+ENV_PATH = REPO_ROOT / ".env"
 
-# Overridable so a different credential file can be used without editing code, and so the
-# missing-key path stays testable once a real .env exists in the repository root. Without the
-# override, adding a key to .env makes NFR-1's failure mode unverifiable.
-ENV_PATH = Path(os.environ.get("DESK_ENV_FILE") or (REPO_ROOT / ".env"))
-
-# Loaded at import. A missing file is not an error here; a missing *variable* is, below.
+# Loaded at import. Missing file is not an error here; a missing *variable* is, below.
 load_dotenv(ENV_PATH)
 
 # FR-1: the reviewer model, configured on the agent itself.
