@@ -188,6 +188,11 @@ can trace a file back to the requirement it serves.
 | FR-11 ledger | trace processor registered once at startup |
 | FR-12 streaming | streamed run plus event iteration, awaited from the page |
 | FR-13 one trace | tracing enabled and exported under the project's own key |
+| NFR-1 secrets | `config.require_env("OPENAI_API_KEY")` loads the repository-root `.env` through `python-dotenv`; the guardrail covers the outbound path; the ledger writer is passed metadata only, never diff or finding text |
+| NFR-2 cost | every agent declares its own `model_settings`; `max_turns` bounds every review |
+| NFR-3 observability | tracing enabled for every review, plus the ledger processor recording every run |
+| NFR-4 failure | `failure_error_function` on the reading tools; no tool raises into the runner |
+| NFR-5 provenance | the Phase 0 commit precedes any source file, verified from `git log` order in T038 |
 
 *Re-checked after Phase 1 design: no principle moved from PASS.*
 

@@ -271,11 +271,13 @@ reviewer spans overlap in time and the slowest can be named.
 
 ### Non-Functional Requirements
 
-- **NFR-1 — Secrets.** The OpenAI API key MUST be read from a `.env` file at the repository root
-  that is gitignored, loaded at startup before anything else runs. A missing key MUST fail at
+- **NFR-1 — Secrets.** The OpenAI API key MUST be supplied as `OPENAI_API_KEY`, read from a `.env`
+  file at the repository root that is gitignored, and loaded at startup by a dotenv loader before
+  anything else runs — never from a hard-coded value, and never by indexing the environment
+  directly, which raises a traceback precisely when the key is absent. A missing key MUST fail at
   startup with one sentence on stderr and a non-zero exit status, never a traceback. No secret —
   and nothing shaped like one — may ever be written to the ledger, the report, the trace, or the
-  interface. A committed `.env.example` MUST name every required variable without carrying values.
+  interface. A committed `.env.example` MUST name `OPENAI_API_KEY` without carrying a value.
 - **NFR-2 — Cost.** Every agent MUST declare its own model settings. There MUST be no unbounded
   generation anywhere: turn ceilings and explicit settings bound every execution.
 - **NFR-3 — Observability.** Every review MUST be traceable and every run MUST be recorded in the
