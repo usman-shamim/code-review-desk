@@ -10,15 +10,15 @@ behaviour rather than about claims.
 ## Status
 
 ```
-uv run pytest -q     →  126 passed
+uv run pytest -q     →  127 passed
 uv run ruff check .  →  All checks passed
 ```
 
 | Metric | Value |
 |---|---|
-| Pipeline source | 1,403 lines across `src/desk/` |
-| Tests | 1,154 lines across `tests/` |
-| Tests passing | 126 / 126 |
+| Pipeline source | 1,422 lines across `src/desk/` |
+| Tests | 1,186 lines across `tests/` |
+| Tests passing | 127 / 127 |
 | Lint | clean (`ruff`, `E F I UP B`) |
 | Python | 3.12.14 (uv-managed), `requires-python >= 3.11` |
 | SDK | `openai-agents` 0.22.3 |

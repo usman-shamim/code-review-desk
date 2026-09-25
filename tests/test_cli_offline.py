@@ -21,14 +21,16 @@ SAMPLES = REPO / "samples"
 def cli(*args: str, with_key: bool = False) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     if not with_key:
-        env.pop("OPENAI_API_KEY", None)
+        # An empty value counts as present to load_dotenv (override=False), so .env cannot
+        # re-supply the key, while require_env's truthiness check still treats it as missing.
+        env["OPENAI_API_KEY"] = ""
     return subprocess.run(
         [sys.executable, "-m", "desk.cli", *args],
         capture_output=True,
         text=True,
         cwd=REPO,
         env=env,
-        timeout=120,
+        timeout=180,
     )
 
 

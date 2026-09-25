@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agents import Agent, ModelSettings, RunContextWrapper, handoff
+from openai.types.shared import Reasoning
 
 from . import config
 from .guardrails import no_credentials
@@ -29,6 +30,22 @@ REVIEWER_ROLES: tuple[tuple[str, str], ...] = (
 # string is not a documented Responses value — so "required" is the strongest form that is
 # certain to be accepted. The caveat is recorded in REPORT.md rather than glossed over.
 FORCED_TOOL_CALL = "required"
+
+
+def _settings(*, effort: str = "low", verbosity: str = "low", force_tool: bool = False):
+    """Model settings for a reasoning model.
+
+    `gpt-5-nano` rejects `temperature` outright with a 400 — "Unsupported parameter" — so the
+    temperature knob every chat model has is simply unavailable here. Settings are expressed as
+    reasoning effort and verbosity instead, which are the controls this model does accept.
+    This was found by the first live run; the request-payload test in
+    `tests/test_agent_wiring.py` now pins the shape offline.
+    """
+    return ModelSettings(
+        reasoning=Reasoning(effort=effort),
+        verbosity=verbosity,
+        tool_choice=FORCED_TOOL_CALL if force_tool else None,
+    )
 
 
 def _instructions_for(role: str, focus: str) -> Callable[..., str]:
@@ -77,7 +94,7 @@ def base_reviewer() -> Agent[ReviewContext]:
         name="BaseReviewer",
         instructions=_instructions_for("reviewer", "the change as a whole"),
         model=config.model_name(),
-        model_settings=ModelSettings(temperature=0.0),
+        model_settings=_settings(),
         tools=reviewer_tools(),
         output_type=list[Finding],
     )
@@ -89,12 +106,15 @@ def reviewers() -> list[Agent[ReviewContext]]:
     clones: list[Agent[ReviewContext]] = []
 
     for name, focus in REVIEWER_ROLES:
-        settings = ModelSettings(temperature=0.0)
+        # FR-5: the three differ in model settings as well as in instructions.
         if name == "SecurityReviewer":
-            # FR-9, first control: no choice but to read the ruleset on the first turn.
-            settings = ModelSettings(temperature=0.0, tool_choice=FORCED_TOOL_CALL)
-        elif name == "StyleReviewer":
-            settings = ModelSettings(temperature=0.2)
+            # FR-9's first control, plus the most reasoning effort of the three: this is the
+            # reviewer that must read the ruleset and reason about injection paths.
+            settings = _settings(effort="medium", force_tool=True)
+        elif name == "TestsReviewer":
+            settings = _settings(effort="medium")
+        else:
+            settings = _settings(effort="low")
         clones.append(
             base.clone(
                 name=name,
@@ -142,7 +162,7 @@ def merge_specialist() -> Agent[ReviewContext]:
         name="MergeSpecialist",
         instructions=MERGE_INSTRUCTIONS,
         model=config.model_name(),
-        model_settings=ModelSettings(temperature=0.0),
+        model_settings=_settings(),
         output_type=list[Finding],
     )
 
@@ -161,7 +181,7 @@ def remediation_specialist() -> Agent[ReviewContext]:
         name="RemediationSpecialist",
         instructions=REMEDIATION_INSTRUCTIONS,
         model=config.model_name(),
-        model_settings=ModelSettings(temperature=0.0),
+        model_settings=_settings(effort="medium"),
     )
 
 
@@ -197,7 +217,7 @@ def desk_agent(with_remediation: bool) -> Agent[ReviewContext]:
             "Preserve every finding the merge returns. Do not invent findings."
         ),
         model=config.model_name(),
-        model_settings=ModelSettings(temperature=0.0),
+        model_settings=_settings(),
         tools=[merge_tool()],
         handoffs=[remediation_handoff()] if with_remediation else [],
         output_type=Report,

@@ -57,6 +57,36 @@ def test_reviewers_differ_in_instructions_and_settings() -> None:
     assert len(settings) == 3, "the security and style reviewers differ in model settings"
 
 
+def test_reviewers_request_reasoning_settings_without_temperature() -> None:
+    """The gpt-5-nano regression: temperature is rejected with a 400, so the request the model
+    receives must carry reasoning effort and verbosity instead.
+
+    Built through the SDK's own request builder, so this asserts the parameters that would go on
+    the wire rather than the shape of our ModelSettings objects.
+    """
+    from agents.models.openai_responses import OpenAIResponsesModel
+    from openai import AsyncOpenAI, omit
+
+    model = OpenAIResponsesModel("gpt-5-nano", AsyncOpenAI(api_key="sk-not-used"))
+    expected_effort = {
+        "SecurityReviewer": "medium",
+        "TestsReviewer": "medium",
+        "StyleReviewer": "low",
+    }
+    for reviewer in agents.reviewers():
+        request = model._build_response_create_kwargs(
+            system_instructions="sys",
+            input="diff",
+            model_settings=reviewer.model_settings,
+            tools=reviewer.tools,
+            output_schema=None,
+            handoffs=reviewer.handoffs,
+        )
+        assert request["temperature"] is omit, f"{reviewer.name} would send a temperature"
+        assert request["reasoning"].effort == expected_effort[reviewer.name]
+        assert request["text"]["verbosity"] == "low"
+
+
 def test_every_agent_declares_its_own_model_and_settings() -> None:
     """NFR-2 and constitution Principle II — no agent inherits an SDK default."""
     every_agent = [
