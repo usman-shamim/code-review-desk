@@ -3,7 +3,7 @@
 **Feature Branch**: `001-code-review-desk`
 **Created**: 2026-09-25
 **Status**: Approved (Phase 0 baseline — committed before any source file)
-**Input**: User description: "A spec-first review pipeline that splits a unified diff by file, runs security, tests and style reviewers concurrently, merges their findings into one typed report, hands off to a remediation agent on critical security findings, streams findings to a Chainlit interface, and refuses to emit any report that quotes a credential."
+**Input**: User description: "A spec-first review pipeline that splits a unified diff by file, runs security, tests and style reviewers concurrently, merges their findings into one typed report, hands off to a remediation agent on critical security findings, streams findings to a live interface, and refuses to emit any report that quotes a credential."
 
 ---
 
@@ -17,6 +17,24 @@ Nothing leaves the Desk quoting a secret it found in the diff.
 
 The distinction that shapes the whole design: this is a **fan-out, fan-in pipeline**. The value
 is in the concurrency, and in the guardrail that stands between the report and the operator.
+
+### Vocabulary
+
+Three words carry weight here, and the viva asks directly about the difference, so they are fixed
+before they are used:
+
+- **Desk** — the whole pipeline: intake, the three reviewers, the specialists, the guardrail, the
+  report. The Desk is not an agent.
+- **Reviewer** — one of the three concurrent agents that read the diff (security, tests, style).
+  Reviewers are derived from a single shared base and differ in instructions and model settings
+  only.
+- **Specialist** — an agent the Desk brings in for a distinct job. **Merge** returns a reconciled
+  finding set to the Desk, which keeps the conversation; **Remediation** takes the conversation
+  over to propose a patch.
+
+A *review* is one pass of the Desk over one diff. A *run* is one agent's execution inside that
+review. One review contains several runs — which is why the ledger holds more lines than there are
+reviewers.
 
 ---
 
@@ -173,7 +191,7 @@ reviewer spans overlap in time and the slowest can be named.
 - **FR-1 — A diff goes in, split by file.** The Desk MUST read a unified diff from a path given on
   the command line and split it into per-file chunks **before any model sees it**. The reviewer
   model MUST be OpenAI `gpt-5-nano`, configured on the agent itself. The entry point MUST be
-  asynchronous. Credentials MUST be read from the repository-root `.env` file.
+  asynchronous, and every credential it uses MUST be supplied as described in NFR-1.
   **Done when**: a two-file diff produces two chunks; an empty or malformed diff is reported as a
   message, not a traceback; nothing in the code sets a global default client.
 
@@ -186,7 +204,7 @@ reviewer spans overlap in time and the slowest can be named.
 - **FR-3 — Findings come back as a list of typed objects.** A reviewer MUST return a list of typed
   findings, not prose. Each finding carries `file`, `line`, a `severity` of `critical`, `major` or
   `minor`, and a `message`. The agent's declared output type MUST be a list of that model, and the
-  returned value MUST be a plain Python list.
+  returned value MUST be directly iterable without an unwrapping step.
   **Done when**: the returned value can be iterated and its criticals counted with a single Python
   expression, and the wrapper object that the generated schema needs can be pointed at and
   explained.
@@ -200,9 +218,9 @@ reviewer spans overlap in time and the slowest can be named.
 - **FR-5 — Three reviewers, cloned, running concurrently (never cut).** Security, tests and style
   reviewers MUST be configured from one shared base reviewer, differing in instructions and model
   settings, and MUST run concurrently over the same diff — started together and awaited as a group.
-  **Done when**: the concurrent wall clock for the three reviews is close to the slowest single
-  review rather than the sum of the three, and both numbers can be shown. A sequential version
-  that merely works does not satisfy this requirement.
+  **Done when**: for the same diff, the concurrent wall clock is at most 1.5x the slowest single
+  reviewer and below 60% of the sequential total, with both numbers shown side by side. A
+  sequential version that merely works does not satisfy this requirement.
 
 - **FR-6 — Merge as a tool, remediation by handoff.** A Merge specialist MUST be exposed to the
   Desk as a tool call: it deduplicates overlapping findings and orders them by severity, and the
@@ -225,23 +243,28 @@ reviewer spans overlap in time and the slowest can be named.
   diff passes untouched, and the line that caught the refusal can be pointed at.
 
 - **FR-9 — Required tools, failing tools, and a ceiling.** All three controls MUST be present: the
-  reviewer that must consult the ruleset is configured so the model has no choice but to call it;
-  diff-reading tools hand their failures to a dedicated error handler rather than raising; and
-  every review runs under a turn ceiling that is caught and reported as a partial review.
-  **Done when**: deleting the ruleset file produces a review that still finishes with a sensible
-  message, and the chosen ceiling can be stated along with the reasoning behind the number.
+  security reviewer MUST be configured so that its first turn calls the ruleset tool before it can
+  produce findings; diff-reading tools MUST hand their failures to a dedicated error handler rather
+  than raising; and every review MUST run under a turn ceiling whose exhaustion is caught and
+  reported as a partial review naming the ceiling.
+  **Done when**: deleting the ruleset file produces a review that still finishes, its message being
+  the one recorded in `plan.md`'s error-sentence contract, and the chosen ceiling can be stated
+  along with the reasoning behind the number.
 
 - **FR-10 — Latency and tokens per reviewer.** Run-level hooks MUST record, for each reviewer, how
   long it took and how many tokens it used, and the report MUST carry those numbers in a footer.
   Agent-level hooks MUST be attached to exactly one reviewer.
-  **Done when**: the footer shows three rows with token counts read from the run context rather
-  than estimated, and the difference between what agent-level hooks see and what run-level hooks
-  see can be explained.
+  **Done when**: a complete review's footer shows one row per reviewer — three on the normal path,
+  fewer when the review is partial — with token counts read from the run context rather than
+  estimated, and the difference between what agent-level hooks see and what run-level hooks see can
+  be explained.
 
-- **FR-11 — Every run lands in a ledger.** A custom runner MUST append one line per run to
-  `ledger.jsonl`, registered once at startup. No agent definition may mention the ledger. Each
-  line carries a timestamp, a request identifier, the agent name, a duration in milliseconds, and
-  a finding count — and no diff content, finding text, or credential.
+- **FR-11 — Every run lands in a ledger.** A run observer MUST append one line per run to
+  `ledger.jsonl`. The mechanism is the plan's decision; what this specification fixes is that the
+  observer is registered exactly once at startup, from outside every agent definition, and that no
+  agent definition mentions the ledger. Each line carries a timestamp, a request identifier, the
+  agent name, a duration in milliseconds, and a finding count — and no diff content, finding text,
+  or credential.
   **Done when**: one review of a three-file diff produces one ledger line per run, and removing
   the registration is the only change needed to switch the ledger off.
 
@@ -316,8 +339,8 @@ reviewer spans overlap in time and the slowest can be named.
 
 - **SC-001**: A two-file diff yields exactly two chunks, and this is observable before any model
   call.
-- **SC-002**: Three concurrent reviews complete in wall-clock time close to the slowest single
-  review, demonstrably not the sum of the three, with both numbers available on demand.
+- **SC-002**: Three concurrent reviews complete within 1.5x the slowest single review and below 60%
+  of the sequential total, with both numbers available on demand.
 - **SC-003**: Critical findings are countable with a single Python expression over the review
   result.
 - **SC-004**: A diff containing a planted credential yields a refusal, and that credential appears
@@ -352,10 +375,23 @@ reviewer spans overlap in time and the slowest can be named.
   them, which is a different job with a different voice, so control transfers. Swapping them would
   leave the Desk unable to assemble its own report and would strand remediation as a call that can
   never propose anything.
+- **Ledger mechanism substituted for the brief's "custom runner".** The brief's coverage table
+  names *custom runners* as the concept behind FR-11. This build satisfies FR-11 with a run
+  observer registered once at startup rather than a custom Runner subclass, because a subclass
+  would have to be threaded through every call site — which is precisely what FR-11 forbids when it
+  says no agent definition may mention the ledger. This is the second recorded disagreement with
+  the brief, alongside the provider substitution above.
 - **Turn ceiling.** Reviews run under a bounded number of turns, chosen small enough that a
-  reviewer looping on a tool cannot run away with the budget, and large enough to allow a ruleset
+  reviewer looping on a tool cannot run away with the budget and large enough to allow a ruleset
   lookup followed by a finding pass. The specific number and its reasoning are recorded in the
   plan.
+- **FR-7 carries an unresolved risk, recorded rather than hidden.** The SDK's own documentation
+  contradicts itself about whether a run-level model takes precedence over an agent-level one. FR-1
+  and Principle II both require the model to be set on the agent, which is exactly the case where
+  the run-level override may not apply. A task exists to settle this empirically before FR-7 is
+  called done. If precedence goes the wrong way, FR-7 and Principle II MUST be reconciled by an
+  explicit constitution amendment — not by quietly leaving one agent's model unset to make the
+  override work.
 - **Ledger placement.** The ledger is written to the repository root as `ledger.jsonl` and is
   gitignored, so run history never becomes a committed artifact.
 - **Credential detection is shape-based.** The guardrail recognises credential-shaped strings

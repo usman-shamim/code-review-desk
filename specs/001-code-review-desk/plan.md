@@ -28,11 +28,13 @@ review content is persisted.
 **Testing**: `pytest`, run via `uv run pytest`
 **Target Platform**: Local developer machine, Linux. No server deployment.
 **Project Type**: Single project — one Python package plus one Chainlit page
-**Performance Goals**: Three concurrent reviews complete in wall-clock time close to the slowest
-single review, and demonstrably not the sum of the three (FR-5, SC-002)
+**Performance Goals**: Three concurrent reviews complete within 1.5x the slowest single reviewer
+and below 60% of the sequential total, measured over the same diff (FR-5, SC-002)
 **Constraints**: Bounded generation everywhere — every agent declares its own model settings and
-every review runs under a turn ceiling (NFR-2, FR-9). Credentials only in `.env` (NFR-1). No
-global default client is ever set (FR-1). The reviewed code is never executed (spec non-goal 2).
+every review runs under a turn ceiling (NFR-2, FR-9). Credentials only in `.env` (NFR-1), and
+tracing MUST NOT record sensitive data, because the SDK records prompts and tool I/O by default —
+and the diff is both (NFR-1, FR-13). No global default client is ever set (FR-1). The reviewed code
+is never executed (spec non-goal 2).
 **Scale/Scope**: One operator, one diff per review, three reviewers, two specialists; 13
 functional requirements across three phases.
 
@@ -61,6 +63,14 @@ No violations, so no principle was relaxed to fit the clock.
 | **Style reviewer** | Finds readability and consistency defects | Clone; `normal` strictness | Launched by `asyncio.gather` |
 | **Merge specialist** | Deduplicates and severity-orders the three finding sets | Own declaration | **Tool call** via `as_tool` — the Desk keeps the conversation |
 | **Remediation specialist** | Proposes the patch for a critical security finding, to the operator | Own declaration | **Handoff** — control transfers when a critical security finding exists |
+| **Report agent** | Emits the finished `Report` — findings, footer, partial flag | Own declaration | Runs last and **carries the output guardrail** |
+
+**Which agent carries the output guardrail (FR-8).** The guardrail must inspect the finished
+report, and the SDK only runs an agent's output guardrails when that agent is the last to run. A
+`Report` assembled in `pipeline.py` is therefore unguardable — an object built in Python is not an
+agent output, so no guardrail would ever see it. The report is consequently produced by a Report
+agent that runs after the merge and owns the `@output_guardrail`; `pipeline.py` catches
+`OutputGuardrailTripwireTriggered` from that run, which is the line FR-8's "done when" points at.
 
 **Why the two specialists are wired differently** (the brief requires this be argued; `spec.md`
 Assumptions carries the two-sentence version): merging *returns a value the Desk still needs* —
@@ -76,9 +86,17 @@ awaited as a group:
 async def review(chunks, context):
     reviewers = [security.clone(), tests.clone(), style.clone()]
     started = time.perf_counter()
-    results = await asyncio.gather(*(run_one(r, chunks, context) for r in reviewers))
+    # return_exceptions=True is load-bearing. With the default False, one reviewer hitting its
+    # turn ceiling would abort the group and cancel the other two, discarding completed work.
+    results = await asyncio.gather(
+        *(run_one(r, chunks, context) for r in reviewers), return_exceptions=True
+    )
     return results, time.perf_counter() - started
 ```
+
+`run_one` also passes `max_turns=8` and `error_handlers={"max_turns": ...}`, so a reviewer that
+exhausts its ceiling recovers to a partial result instead of raising at all; `return_exceptions=True`
+is the second line of defence, covering failures that are not the ceiling.
 
 The sequential comparison needed for the viva is the same call with `gather` replaced by an
 `await` inside a loop. Nothing else changes, which is what makes the two wall-clock numbers
@@ -92,9 +110,9 @@ FR-2's "done when".
 
 | Tool | Signature | Returns | Control |
 |------|-----------|---------|---------|
-| `read_ruleset` | `(ctx: RunContextWrapper[ReviewContext], ruleset_id: str) -> str` | The ruleset text, or a sentence if it cannot be read | Forced with `ModelSettings(tool_choice=...)` so the model has no choice but to call it (FR-9). Reads `ruleset_id` through the wrapper; `ctx` never appears in the schema |
+| `read_ruleset` | `(ctx: RunContextWrapper[ReviewContext], ruleset_id: str) -> str` | The ruleset text, or a sentence if it cannot be read | Named in `ModelSettings(tool_choice=...)` on the **security reviewer**, so its first turn calls this tool before it can produce findings (FR-9). Note the limit: `tool_choice` resets to `"auto"` after a tool call, so the guarantee covers the first turn only. Reads `ruleset_id` through the wrapper; `ctx` never appears in the schema |
 | `read_diff_chunk` | `(ctx: RunContextWrapper[ReviewContext], path: str) -> str` | One chunk's text, or a sentence the model can act on | `failure_error_function=` returns a sentence; a raise into the runner is a defect (NFR-4) |
-| `merge_findings` | Merge agent exposed via `as_tool(...)` | A deduplicated, severity-ordered finding list | Tool call — the conversation stays with the Desk (FR-6) |
+| `merge_findings` | Merge agent exposed via `as_tool(...)` with an explicit `parameters` model | A deduplicated, severity-ordered finding list | Tool call — the conversation stays with the Desk (FR-6). A nested `as_tool` run does **not** inherit the parent's session or state, so the findings are handed in as the tool's structured input rather than relying on shared context |
 
 ## Boundary Structures
 
@@ -124,6 +142,17 @@ FR-2's "done when".
 - **Ledger registration point.** The processor is registered once at startup by the entry point.
   No agent definition imports or mentions it, so removing that one registration is the whole
   switch — which is FR-11's "done when".
+- **Tracing must not record sensitive data.** The SDK's `trace_include_sensitive_data` defaults to
+  **True**, recording prompts and tool I/O — and the diff is both. Left at the default, the trace
+  would carry the very credential FR-8 exists to refuse, breaking NFR-1 and Principle III. The run
+  config therefore sets it to `False`. This is a correctness requirement, not a preference. The
+  ledger processor is unaffected: it observes the same run events but writes metadata fields only.
+- **FR-7's precedence is unverified and is not assumed.** The SDK's documentation disagrees with
+  itself on whether `RunConfig(model=...)` beats an agent's own `model`. The one strategy the docs
+  call safe — leave `model` unset on the agent — is exactly what FR-1 and Principle II forbid, so
+  the two requirements cannot both be satisfied by fiat. A task settles it by printing the model
+  actually used on each path. Until that task passes, FR-7 is *specified* but not *demonstrated*,
+  and this plan says so rather than asserting a behaviour that may not hold.
 
 ## Project Structure
 
@@ -159,7 +188,10 @@ src/desk/
 
 app.py                # Chainlit page: paste a diff, stream findings, hold session state (FR-12)
 rulesets/             # ruleset files a reviewer must consult (FR-9)
-tests/                # pytest: wall-clock comparison, guardrail refusal, split, ceiling
+samples/              # diff fixtures: two-file, three-file, planted-key, planted-critical,
+                      # duplicate-findings, empty, malformed (FR-1, FR-5, FR-6, FR-8)
+tests/                # pytest: wall-clock comparison, guardrail refusal, split, ceiling, ledger
+REPORT.md             # the measured wall clocks, the ceiling in force, the refusal message
 .env.example          # variable names without values (NFR-1)
 ```
 
@@ -181,11 +213,12 @@ can trace a file back to the requirement it serves.
 | FR-4 per-run instructions | `instructions=` given a callable resolved at request time |
 | FR-5 concurrency | `asyncio.gather` over clones of one base reviewer |
 | FR-6 tool vs handoff | `as_tool()` for merge; `handoffs=[...]` for remediation |
-| FR-7 run-level override | `RunConfig(model=...)` passed to the run only |
+| FR-7 run-level override | `RunConfig(model=...)` passed to the run only — **precedence unverified**, see Decided Numbers |
 | FR-8 credential refusal | `@output_guardrail`; the tripwire exception is caught in `pipeline.py` |
 | FR-9 required tool / failing tool / ceiling | `tool_choice`; `failure_error_function`; `max_turns` with `MaxTurnsExceeded` caught |
 | FR-10 latency and tokens | `RunHooks` for all reviewers; `AgentHooks` on exactly one; usage from the run context |
-| FR-11 ledger | trace processor registered once at startup |
+| FR-11 ledger | trace processor registered once at startup — the brief's "custom runners" concept, substituted and recorded in `spec.md` Assumptions |
+| FR-8 guardrail host | the Report agent, the last agent to run, owns `@output_guardrail`; `pipeline.py` catches the tripwire |
 | FR-12 streaming | streamed run plus event iteration, awaited from the page |
 | FR-13 one trace | tracing enabled and exported under the project's own key |
 | NFR-1 secrets | `config.require_env("OPENAI_API_KEY")` loads the repository-root `.env` through `python-dotenv`; the guardrail covers the outbound path; the ledger writer is passed metadata only, never diff or finding text |
