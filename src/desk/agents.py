@@ -38,7 +38,8 @@ def _settings(*, effort: str = "low", verbosity: str = "low", force_tool: bool =
     `gpt-5-nano` rejects `temperature` outright with a 400 — "Unsupported parameter" — so the
     temperature knob every chat model has is simply unavailable here. Settings are expressed as
     reasoning effort and verbosity instead, which are the controls this model does accept.
-    This was found by the first live run; no offline test could see it.
+    This was found by the first live run; the request-payload test in
+    `tests/test_agent_wiring.py` now pins the shape offline.
     """
     return ModelSettings(
         reasoning=Reasoning(effort=effort),
