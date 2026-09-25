@@ -1,0 +1,9 @@
+# Assignment brief — not part of the deliverable
+code-review-desk-project-guide.pdf
+
+# Agent tooling / editor config
+.commandcode/
+.opencode/
+
+# Secrets — never commit (NFR-1)
+.env
